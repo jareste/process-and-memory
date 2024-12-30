@@ -16,13 +16,25 @@ add_syscall:
 	@cp -f $(SRC) $(KERNEL_PATH)/kernel/sys_get_pid_info.c
 	@echo "Syscall added or confirmed successfully."
 
+# build_kernel:
+# 	@echo "Building the kernel..."
+# 	cd $(KERNEL_PATH) && make -j2
+# 	@echo "Installing the kernel..."
+# 	cd $(KERNEL_PATH) && make modules_install && make install
+# 	@echo "Updating bootloader and rebooting..."
+# 	sudo update-grub
+
+
 build_kernel:
-	@echo "Building the kernel..."
-	cd $(KERNEL_PATH) && make -j2
+	@echo "Building only the modified files..."
+	cd $(KERNEL_PATH) && make -j2 kernel/sys_get_pid_info.o
+	@echo "Rebuilding kernel image..."
+	cd $(KERNEL_PATH) && make -j2 bzImage
 	@echo "Installing the kernel..."
 	cd $(KERNEL_PATH) && make modules_install && make install
-	@echo "Updating bootloader and rebooting..."
+	@echo "Updating bootloader..."
 	sudo update-grub
+
 
 clean:
 	@echo "Cleaning up..."
