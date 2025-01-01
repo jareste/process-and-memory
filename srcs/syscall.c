@@ -17,13 +17,15 @@ struct pid_info {
     unsigned long       age;
     struct timespec64   time;
     size_t              nb_childs;
-    pid_t               *child_pids;
+    pid_t               *child_pids; /* user must allocate this and tell it's len in childs_len */
     size_t              childs_len;
     pid_t               parent_pid;
     char                *exe;
     char                *root_path;
     char                *pwd;
 };
+
+static DEFINE_SPINLOCK(pid_info_lock);
 
 static int fetch_path(char * __user dst, size_t len, struct path *path)
 {
@@ -115,86 +117,103 @@ SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
 {
     struct task_struct *task;
     struct task_struct *child;
-    struct pid_info info = {0};
-    struct path root_path, pwd_path;
+    struct pid_info info;
     pid_t *tmp;
 
-    rcu_read_lock();
+    /* I received a NULL pointer, so it's an error
+     */
+    if (!user_ret)
+        return -EFAULT;
 
+    /* I received a pointer to a struct, but the struct is invalid
+     * (all fields are 0 or NULL), so I can't trust the pointer
+     * therefore, it's an error.
+     */
     if (copy_from_user(&info, user_ret, sizeof(info)))
+        return -EFAULT;
+
+    /* I received a pointer to a struct, but the struct is invalid
+     * (all fields are 0 or NULL), so I can't trust the pointer
+     * therefore, it's an error.
+     */
+    if (info.pid == 0 && info.state == 0 && info.stack_ptr == NULL &&
+        info.age == 0 && info.time.tv_sec == 0 && info.time.tv_nsec == 0 &&
+        info.nb_childs == 0 && info.child_pids == NULL && info.childs_len == 0 &&
+        info.parent_pid == 0 && info.exe == NULL && info.root_path == NULL &&
+        info.pwd == NULL)
     {
-        rcu_read_unlock();
         return -EFAULT;
     }
+
+    if (info.childs_len > 0 && !access_ok(info.child_pids, info.childs_len))
+        return -EFAULT;
+    if (info.exe && !access_ok(info.exe, PATH_MAX))
+        return -EFAULT;
+    if (info.root_path && !access_ok(info.root_path, PATH_MAX))
+        return -EFAULT;
+    if (info.pwd && !access_ok(info.pwd, PATH_MAX))
+        return -EFAULT;
+
+    rcu_read_lock();
+    spin_lock(&pid_info_lock);
 
     task = find_task_by_vpid(pid);
     if (!task)
     {
+        spin_unlock(&pid_info_lock);
         rcu_read_unlock();
         return -ESRCH;
     }
 
     info.pid = task->pid;
-
     info.state = task_state_to_char(task);
     info.time = ns_to_timespec64(ktime_get_ns() - task->start_time);
-
     info.stack_ptr = task->stack;
     info.age = jiffies_to_msecs(jiffies - task->start_time);
-    info.parent_pid = task->parent->pid;
+    info.parent_pid = task->real_parent->pid;
 
-    get_fs_root(task->fs, &root_path);
-    get_fs_pwd(task->fs, &pwd_path);
-
-    if (!dentry_path_raw(root_path.dentry, info.root_path, sizeof(info.root_path)))
-        strncpy(info.root_path, "(unknown)", sizeof(info.root_path));
-
-    if (!dentry_path_raw(pwd_path.dentry, info.pwd, sizeof(info.pwd)))
-        strncpy(info.pwd, "(unknown)", sizeof(info.pwd));
-
-    /* Childs */
+    info.nb_childs = 0;
     list_for_each_entry(child, &task->children, sibling)
     {
         info.nb_childs++;
     }
 
-    if (info.nb_childs * sizeof(pid_t) > info.childs_len)
-        return (-ENOMEM);
-
-    if (info.nb_childs)
+    if (info.nb_childs > info.childs_len / sizeof(pid_t))
     {
-        tmp = info.nb_childs;
-        list_for_each_entry(child, &task->children, sibling)
-        {
-            *tmp = child->pid;
-            if (copy_to_user(tmp, &child->pid, sizeof(pid_t)))
-                return (-EFAULT);
-            tmp += 1;
-        }
+        spin_unlock(&pid_info_lock);
+        rcu_read_unlock();
+        return -ENOMEM;
     }
-    /* Childs END */
+
+    tmp = info.child_pids;
+    list_for_each_entry(child, &task->children, sibling)
+    {
+        if (copy_to_user(tmp, &child->pid, sizeof(pid_t)))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
+        tmp++;
+    }
+
+    spin_unlock(&pid_info_lock);
     rcu_read_unlock();
 
     if (copy_to_user(user_ret, &info, sizeof(info)))
         return -EFAULT;
 
     if (user_ret->exe)
-    {
         if (get_exe(user_ret->exe, PATH_MAX, task))
             return -EFAULT;
-    }
 
     if (user_ret->root_path)
-    {
         if (get_root(user_ret->root_path, PATH_MAX, task))
             return -EFAULT;
-    }
 
     if (user_ret->pwd)
-    {
         if (get_pwd(user_ret->pwd, PATH_MAX, task))
             return -EFAULT;
-    }
 
     return 0;
 }

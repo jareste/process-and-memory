@@ -6,6 +6,8 @@
 #include <string.h>
 #include <time.h>
 #include <limits.h>
+#include <assert.h>
+#include <pthread.h>
 
 struct pid_info {
     int             pid;
@@ -23,32 +25,33 @@ struct pid_info {
 };
 
 #define SYS_get_pid_info 548
+#define GREEN "\033[0;32m"
+#define RED "\033[0;31m"
+#define RESET "\033[0m"
 
-/* Task states
- * R: Running
- * S: Sleeping in an interruptible wait
- * D: Waiting in uninterruptible disk sleep
- * Z: Zombie
- * T: Stopped (on a signal) or (trace stopped)
- * t: Tracing stop
- * X: Dead EXIT
- * x: Dead task dead
- * K: Wakekill (killed while waking)
- * W: Waking
- * P: Parked
- * I: Idle
- */
+int passed = 0;
+int failed = 0;
 
-int main(int argc, char *argv[])
+int check_condition(const char *description, int condition)
 {
-    int pid;
-    if (argc == 2)
-        pid = atoi(argv[1]);
+    if (condition)
+    {
+        printf(GREEN "[PASS] %s" RESET "\n", description);
+        passed++;
+        return 1;
+    }
     else
-        pid = getpid();
-    
+    {
+        printf(RED "[FAIL] %s" RESET "\n", description);
+        failed++;
+        return 0;
+    }
+}
+
+void syscall_unit_test(int pid, const char *description, int expect_errno)
+{
     struct pid_info info;
-    pid_t child_pids[64];
+    pid_t child_pids[128];
     char exe[PATH_MAX], root_path[PATH_MAX], pwd[PATH_MAX];
 
     info.child_pids = child_pids;
@@ -58,30 +61,100 @@ int main(int argc, char *argv[])
     info.pwd = pwd;
 
     long result = syscall(SYS_get_pid_info, &info, pid);
-    if (result != 0)
+
+    if (expect_errno == 0)
     {
-        fprintf(stderr, "Error calling syscall: %s\n", strerror(errno));
-        return 1;
+        if (check_condition(description, result == 0) == 0)
+        {
+            printf("Expected return value: 0, Actual return value: %ld, pid: %d\n", result, pid);
+            return;
+        }
+        if (result == 0)
+        {
+            if (check_condition("PID matches requested PID", info.pid == pid) == 0)
+            {
+                printf("Expected PID: %d, Actual PID: %d\n", pid, info.pid);
+            }
+
+            if (check_condition("State is valid", info.state > 0) == 0)
+            {
+                printf("Invalid state: %d\n", info.state);
+            }
+
+            if (check_condition("Executable path is not empty", strlen(info.exe) > 0) == 0)
+            {
+                printf("Empty exe path\n");
+            }
+
+            if (check_condition("Root path is not empty", strlen(info.root_path) > 0) == 0)
+            {
+                printf("Empty root path\n");
+            }
+            
+            if (check_condition("PWD is not empty", strlen(info.pwd) > 0) == 0)
+            {
+                printf("Empty pwd\n");
+            }
+        }
+    }
+    else
+    {
+        if (check_condition(description, result == -1 && errno == expect_errno) == 0)
+            printf("Expected errno: %d, Actual errno: %d\n", expect_errno, errno);
+    }
+}
+
+void *thread_test(void *arg)
+{
+    int pid = *(int *)arg;
+    syscall_unit_test(pid, "Threaded syscall test", 0);
+    return NULL;
+}
+
+void run_tests()
+{
+    printf("Running unit tests for get_pid_info syscall...\n\n");
+
+    syscall_unit_test(getpid(), "Current process PID", 0);
+
+    syscall_unit_test(1, "Init process PID", 0);
+
+    syscall_unit_test(99999, "Non-existent PID", ESRCH);
+
+    struct pid_info invalid_info = {0};
+    long result = syscall(SYS_get_pid_info, &invalid_info, getpid());
+
+    if (check_condition("Invalid buffers test", result == -1 && errno == EFAULT) == 0)
+    {
+        printf("Expected errno: %d, Actual errno: %d\n", EFAULT, errno);
+        printf("Expected return value: -1, Actual return value: %ld\n", result);
     }
 
-    printf("PID: %d\n", info.pid);
-    printf("State: %c\n", info.state);
-    printf("Stack Pointer: %p\n", info.stack_ptr);
-    printf("Age (ms): %lu\n", info.age);
-    printf("Parent PID: %d\n", info.parent_pid);
-    printf("Executable: %s\n", info.exe);
-    printf("Root Path: %s\n", info.root_path);
-    printf("Current Working Directory: %s\n", info.pwd);
-
-        printf("Child PIDs: ");
-
-    if (info.nb_childs == 0)
-        printf("No child processes");
+    if (fork() == 0)
+        exit(0);
     else
-        for (size_t i = 0; i < info.nb_childs; i++)
-            printf("%d ", info.child_pids[i]);
+    {
+        sleep(1);
+        syscall_unit_test(getpid(), "Zombie process test", 0);
+    }
 
-    printf("\n");
+    printf("\nRunning concurrency test with multiple threads...\n");
+    int test_pids[] = {getpid(), 1};
+    pthread_t threads[2];
 
-    return 0;
+    for (int i = 0; i < 2; i++)
+        pthread_create(&threads[i], NULL, thread_test, &test_pids[i]);
+
+    for (int i = 0; i < 2; i++)
+        pthread_join(threads[i], NULL);
+
+    printf("\nSummary of test results:\n");
+    printf("Passed: %d\n", passed);
+    printf("Failed: %d\n", failed);
+}
+
+int main()
+{
+    run_tests();
+    return failed > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

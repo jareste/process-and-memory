@@ -35,6 +35,13 @@ build_kernel:
 	@echo "Updating bootloader..."
 	sudo update-grub
 
+test:
+	@echo "Testing get_pid_info..."
+	@cc -o ./test/test ./test/main.c 
+	@./test/test
+	@sleep 1
+	@rm -rf ./test/test
+	@echo "Testing complete."
 
 clean:
 	@echo "Cleaning up..."
@@ -42,3 +49,5 @@ clean:
 	sed -i '/get_pid_info/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
 	sed -i '/sys_get_pid_info.o/d' $(KERNEL_PATH)/kernel/Makefile
 	@echo "Cleanup complete."
+
+.PHONY: all add_syscall build_kernel test clean
