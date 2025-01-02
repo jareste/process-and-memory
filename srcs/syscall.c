@@ -113,6 +113,11 @@ static int get_exe(char * __user dst, size_t len, struct task_struct *tsk)
     return ret;
 }
 
+static bool is_kernel_thread(struct task_struct *task)
+{
+    return !(task->mm);
+}
+
 SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
 {
     struct task_struct *task;
@@ -177,26 +182,44 @@ SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
         info.time.tv_nsec = 0;
         info.nb_childs = 0;
 
-        // if (info.exe && copy_to_user(info.exe, "[zombie]", 8))
-        // {
-        //     spin_unlock(&pid_info_lock);
-        //     rcu_read_unlock();
-        //     return -EFAULT;
-        // }
-        
-        // if (info.root_path && copy_to_user(info.root_path, "(unavailable)", 13))
-        // {
-        //     spin_unlock(&pid_info_lock);
-        //     rcu_read_unlock();
-        //     return -EFAULT;
-        // }
-        
-        // if (info.pwd && copy_to_user(info.pwd, "(unavailable)", 13))
-        // {
-        //     spin_unlock(&pid_info_lock);
-        //     rcu_read_unlock();
-        //     return -EFAULT;
-        // }
+        if (copy_to_user(user_ret, &info, sizeof(info)))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
+
+        spin_unlock(&pid_info_lock);
+        rcu_read_unlock();
+        return 0;
+    }
+
+    if (is_kernel_thread(task))
+    {
+        info.time.tv_sec = 0;
+        info.time.tv_nsec = 0;
+        info.nb_childs = 0;
+
+        if (info.exe && copy_to_user(info.exe, "[kernel_thread]", 15))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
+
+        if (info.root_path && copy_to_user(info.root_path, "(none)", 6))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
+
+        if (info.pwd && copy_to_user(info.pwd, "(none)", 6))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
 
         if (copy_to_user(user_ret, &info, sizeof(info)))
         {

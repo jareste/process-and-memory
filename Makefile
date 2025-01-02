@@ -37,10 +37,7 @@ build_kernel:
 
 test:
 	@echo "Testing get_pid_info..."
-	@cc -o ./test/test ./test/main.c 
-	@./test/test
-	@sleep 1
-	@rm -rf ./test/test
+	@sh test.sh
 	@echo "Testing complete."
 
 clean:

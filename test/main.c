@@ -33,7 +33,7 @@ struct pid_info {
 int passed = 0;
 int failed = 0;
 
-int check_condition(const char *description, int condition)
+static int check_condition(const char *description, int condition)
 {
     if (condition)
     {
@@ -49,7 +49,54 @@ int check_condition(const char *description, int condition)
     }
 }
 
-void syscall_unit_test(int pid, const char *description, int expect_errno)
+static void test_zombie_process()
+{
+    pid_t pid = fork();
+
+    if (pid == 0)
+    {
+        exit(127);
+    }
+    else if (pid > 0)
+    {
+        sleep(1);
+
+        struct pid_info info;
+        pid_t child_pids[128];
+        char exe[PATH_MAX], root_path[PATH_MAX], pwd[PATH_MAX];
+
+        info.child_pids = child_pids;
+        info.childs_len = sizeof(child_pids);
+        info.exe = exe;
+        info.root_path = root_path;
+        info.pwd = pwd;
+
+        long result = syscall(SYS_get_pid_info, &info, pid);
+
+        if (result != 0)
+        {
+            printf(RED "[FAIL] Syscall failed for zombie process" RESET "\n");
+            printf("Error: %s (errno: %d)\n", strerror(errno), errno);
+        }
+        else
+        {
+            check_condition("Zombie process detected", info.state == 'Z');
+            check_condition("PID is correct", info.pid == pid);
+            check_condition("Parent PID is correct", info.parent_pid == getpid());
+            check_condition("Age is greater than 0", info.age > 0);
+            check_condition("Number of childs is 0", info.nb_childs == 0);
+            check_condition("Stack pointer is NULL", info.stack_ptr == NULL);
+        }
+
+        waitpid(pid, NULL, 0);
+    }
+    else
+    {
+        perror("fork");
+    }
+} /* Zombie test end */
+
+static void syscall_unit_test(int pid, const char *description, int expect_errno)
 {
     struct pid_info info;
     pid_t child_pids[128];
@@ -105,14 +152,58 @@ void syscall_unit_test(int pid, const char *description, int expect_errno)
     }
 }
 
-void *thread_test(void *arg)
+static void *thread_test(void *arg)
 {
     int pid = *(int *)arg;
     syscall_unit_test(pid, "Threaded syscall test", 0);
     return NULL;
 }
 
-void run_tests()
+static void extended_tests()
+{
+    printf("\nRunning extended tests for get_pid_info syscall...\n\n");
+
+    /* Again Edge Cases */
+    syscall_unit_test(0, "Zero PID", ESRCH);
+    syscall_unit_test(-1, "Negative PID", ESRCH);
+    syscall_unit_test(INT_MAX, "Maximum PID", ESRCH);
+
+    /* TODO check permission handling */
+    printf("[INFO] Skipping permission tests (requires manual setup or root privileges)\n");
+
+    /* it must fail due to short child_pids buffer*/
+    struct pid_info info;
+    pid_t child_pids[2];
+    info.child_pids = child_pids;
+    info.childs_len = sizeof(child_pids);
+    long result = syscall(SYS_get_pid_info, &info, getpid());
+    if (check_condition("Small buffer for child processes", result == -1) == 0)
+    {
+        printf("Expected return value: -ENOMEM, Actual return value: %ld\n", result);
+    }
+
+    /* Stress test */    
+    printf("\nRunning stress test with many threads...\n");
+    pthread_t threads[50];
+    int test_pid = getpid();
+    for (int i = 0; i < 50; i++)
+    {
+        pthread_create(&threads[i], NULL, thread_test, &test_pid);
+    }
+    for (int i = 0; i < 50; i++)
+    {
+        pthread_join(threads[i], NULL);
+    }
+
+    /* TESTING 1 again*/
+    syscall_unit_test(1, "System Process (PID 1)", 0); /* init */
+    syscall_unit_test(2, "System Process (PID 2)", 0); /* kthread */
+    syscall_unit_test(3, "System Process (PID 3)", 0); /* ksoftirqd */
+
+    printf("\nExtended tests complete.\n");
+}
+
+static void run_tests()
 {
     printf("Running unit tests for get_pid_info syscall...\n\n");
 
@@ -121,6 +212,9 @@ void run_tests()
     syscall_unit_test(1, "Init process PID", 0);
 
     syscall_unit_test(99999, "Non-existent PID", ESRCH);
+
+    syscall_unit_test(-1, "-1 PID", ESRCH);
+    syscall_unit_test(0, "0 PID", ESRCH);
 
     struct pid_info invalid_info = {0};
     long result = syscall(SYS_get_pid_info, &invalid_info, getpid());
@@ -149,6 +243,12 @@ void run_tests()
     for (int i = 0; i < 2; i++)
         pthread_join(threads[i], NULL);
 
+    extended_tests();
+    extended_tests();
+
+    test_zombie_process();
+    test_zombie_process();
+
     printf("\nSummary of test results:\n");
     printf("Passed: %d\n", passed);
     printf("Failed: %d\n", failed);
@@ -156,29 +256,6 @@ void run_tests()
 
 int main()
 {
-    // run_tests();
-    pid_t pid = fork();
-
-    if (pid == 0)
-    {
-        exit(0);
-    }
-    else if (pid > 0)
-    {
-        sleep(1);
-        
-
-        syscall_unit_test(pid, "Zombie process test", 0);
-        printf("Expected errno: %d, Actual errno: %d\n", EFAULT, errno);
-
-        waitpid(pid, NULL, 0);
-    }
-    else
-    {
-        perror("fork");
-        return 1;
-    }
-
- 
+    run_tests(); 
     return failed > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
