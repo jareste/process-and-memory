@@ -23,7 +23,7 @@ int main()
     if (pid == 0)
     {
         printf("Child process created successfully with PID: %d\n", getpid());
-        exit(0);
+        exit(34);
     }
     else
     {

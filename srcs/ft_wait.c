@@ -17,7 +17,11 @@ SYSCALL_DEFINE1(ft_wait, int __user *, status)
             if (status)
             {
                 int encoded_status = (child->exit_code << 8);
-                put_user(encoded_status, status);
+                if (put_user(encoded_status, status))
+                {
+                    ret = -EFAULT;
+                    break;
+                }
             }
             release_task(child);
             break;
