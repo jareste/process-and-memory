@@ -55,21 +55,21 @@ static int fetch_path(char * __user dst, size_t len, struct path *path)
     return ret;
 }
 
-int get_pwd(char * __user dst, size_t len, struct task_struct *tsk)
+static int get_pwd(char * __user dst, size_t len, struct task_struct *tsk)
 {
     struct path pwd;
     get_fs_pwd(tsk->fs, &pwd);
     return fetch_path(dst, len, &pwd);
 }
 
-int get_root(char * __user dst, size_t len, struct task_struct *tsk)
+static int get_root(char * __user dst, size_t len, struct task_struct *tsk)
 {
     struct path root;
     get_fs_root(tsk->fs, &root);
     return fetch_path(dst, len, &root);
 }
 
-int get_exe(char * __user dst, size_t len, struct task_struct *tsk)
+static int get_exe(char * __user dst, size_t len, struct task_struct *tsk)
 {
     char *buffer;
     char *path;
@@ -167,11 +167,50 @@ SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
 
     info.pid = task->pid;
     info.state = task_state_to_char(task);
-    info.time = ns_to_timespec64(ktime_get_ns() - task->start_time);
     info.stack_ptr = task->stack;
     info.age = jiffies_to_msecs(jiffies - task->start_time);
-    info.parent_pid = task->real_parent->pid;
+    info.parent_pid = task->real_parent ? task->real_parent->pid : -1;
 
+    if (task->exit_state == EXIT_ZOMBIE)
+    {
+        info.time.tv_sec = 0;
+        info.time.tv_nsec = 0;
+        info.nb_childs = 0;
+
+        // if (info.exe && copy_to_user(info.exe, "[zombie]", 8))
+        // {
+        //     spin_unlock(&pid_info_lock);
+        //     rcu_read_unlock();
+        //     return -EFAULT;
+        // }
+        
+        // if (info.root_path && copy_to_user(info.root_path, "(unavailable)", 13))
+        // {
+        //     spin_unlock(&pid_info_lock);
+        //     rcu_read_unlock();
+        //     return -EFAULT;
+        // }
+        
+        // if (info.pwd && copy_to_user(info.pwd, "(unavailable)", 13))
+        // {
+        //     spin_unlock(&pid_info_lock);
+        //     rcu_read_unlock();
+        //     return -EFAULT;
+        // }
+
+        if (copy_to_user(user_ret, &info, sizeof(info)))
+        {
+            spin_unlock(&pid_info_lock);
+            rcu_read_unlock();
+            return -EFAULT;
+        }
+
+        spin_unlock(&pid_info_lock);
+        rcu_read_unlock();
+        return 0;
+    }
+
+    info.time = ns_to_timespec64(ktime_get_ns() - task->start_time);
     info.nb_childs = 0;
     list_for_each_entry(child, &task->children, sibling)
     {
@@ -200,9 +239,6 @@ SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
     spin_unlock(&pid_info_lock);
     rcu_read_unlock();
 
-    if (copy_to_user(user_ret, &info, sizeof(info)))
-        return -EFAULT;
-
     if (user_ret->exe)
         if (get_exe(user_ret->exe, PATH_MAX, task))
             return -EFAULT;
@@ -214,6 +250,9 @@ SYSCALL_DEFINE2(get_pid_info, struct pid_info __user *, user_ret, int, pid)
     if (user_ret->pwd)
         if (get_pwd(user_ret->pwd, PATH_MAX, task))
             return -EFAULT;
+
+    if (copy_to_user(user_ret, &info, sizeof(info)))
+        return -EFAULT;
 
     return 0;
 }

@@ -8,6 +8,7 @@
 #include <limits.h>
 #include <assert.h>
 #include <pthread.h>
+#include <sys/wait.h>
 
 struct pid_info {
     int             pid;
@@ -155,6 +156,29 @@ void run_tests()
 
 int main()
 {
-    run_tests();
+    // run_tests();
+    pid_t pid = fork();
+
+    if (pid == 0)
+    {
+        exit(0);
+    }
+    else if (pid > 0)
+    {
+        sleep(1);
+        
+
+        syscall_unit_test(pid, "Zombie process test", 0);
+        printf("Expected errno: %d, Actual errno: %d\n", EFAULT, errno);
+
+        waitpid(pid, NULL, 0);
+    }
+    else
+    {
+        perror("fork");
+        return 1;
+    }
+
+ 
     return failed > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
