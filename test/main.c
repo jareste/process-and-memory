@@ -243,11 +243,11 @@ static void run_tests()
     for (int i = 0; i < 2; i++)
         pthread_join(threads[i], NULL);
 
-    extended_tests();
-    extended_tests();
+    test_zombie_process();
+    test_zombie_process();
 
-    test_zombie_process();
-    test_zombie_process();
+    extended_tests();
+    extended_tests();
 
     printf("\nSummary of test results:\n");
     printf("Passed: %d\n", passed);
