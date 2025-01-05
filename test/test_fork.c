@@ -7,10 +7,17 @@
 #include <errno.h>
 
 #define __NR_ft_fork 549
+#define GREEN "\033[0;32m"
+#define RED "\033[0;31m"
+#define RESET "\033[0m"
+
+#define EXIT_STATUS 34
 
 int main()
 {
     pid_t pid;
+
+    printf("\n#### Test ft_fork syscall ####\n");
 
     pid = syscall(__NR_ft_fork);
 
@@ -22,8 +29,10 @@ int main()
 
     if (pid == 0)
     {
+        printf(GREEN);
         printf("Child process created successfully with PID: %d\n", getpid());
-        exit(34);
+        printf(RESET);
+        exit(EXIT_STATUS);
     }
     else
     {
@@ -38,11 +47,25 @@ int main()
 
         if (WIFEXITED(status))
         {
-            printf("Child exited with status: %d\n", WEXITSTATUS(status));
+            if (WEXITSTATUS(status) == EXIT_STATUS)
+            {
+                printf(GREEN);
+                printf("Child exited with expected status: %d\n", WEXITSTATUS(status));
+                printf(RESET);
+            }
+            else
+            {
+                printf(RED);
+                printf("Child exited with unexpected status: %d\n", WEXITSTATUS(status));
+                printf(RESET);
+                return 1;
+            }
         }
         else
         {
+            printf(RED);
             printf("Child did not exit normally\n");
+            printf(RESET);
             return 1;
         }
     }

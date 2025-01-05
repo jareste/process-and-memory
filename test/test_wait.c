@@ -7,12 +7,17 @@
 #include <errno.h>
 
 #define __NR_ft_wait 552
+#define GREEN "\033[0;32m"
+#define RED "\033[0;31m"
+#define RESET "\033[0m"
 
 int main()
 {
     pid_t pid;
     int status;
     int ret;
+
+    printf("\n#### Test ft_wait syscall ####\n");
 
     pid = fork();
 
@@ -34,21 +39,29 @@ int main()
 
         if (ret == pid)
         {
+            printf(GREEN);
             printf("ft_wait returned the correct PID: %d\n", ret);
+            printf(RESET);
         }
         else
         {
+            printf(RED);
             printf("ft_wait returned an incorrect PID: %d\n", ret);
+            printf(RESET);
             return 1;
         }
 
         if (status == 42)
         {
+            printf(GREEN);
             printf("ft_wait returned the correct status: %d\n", status);
+            printf(RESET);
         }
         else
         {
+            printf(RED);
             printf("ft_wait returned an incorrect status: %d\n", status);
+            printf(RESET);
             return 1;
         }
 

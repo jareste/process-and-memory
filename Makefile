@@ -1,10 +1,10 @@
-KERNEL_PATH := /home/jareste/ft_linux/linux-6.12.6
+# Detect the current kernel source directory
+KERNEL_PATH ?= /lib/modules/$(shell uname -r)/build
 SRC := srcs/syscall.c
 SRC_FORK := srcs/ft_fork.c
 SRC_KILL := srcs/ft_kill.c
 SRC_WAIT := srcs/ft_wait.c
 SRC_MMAP := srcs/ft_mmap.c
-
 
 all: add_syscall build_kernel
 
@@ -20,7 +20,7 @@ add_syscall:
 	@if ! grep -q "sys_get_pid_info.o" $(KERNEL_PATH)/kernel/Makefile; then \
 		echo "obj-y += sys_get_pid_info.o" >> $(KERNEL_PATH)/kernel/Makefile; \
 	fi
-	@cp -f $(SRC) $(KERNEL_PATH)/kernel/sys_get_pid_info.c
+	cp -f $(SRC) $(KERNEL_PATH)/kernel/sys_get_pid_info.c
 	@echo "Syscall added or confirmed successfully."
 
 add_fork:
@@ -106,9 +106,17 @@ test:
 
 clean:
 	@echo "Cleaning up..."
-	rm -f $(KERNEL_PATH)/kernel/sys_get_pid_info.c
+	rm -f $(KERNEL_PATH)/kernel/sys_get_pid_info.c $(KERNEL_PATH)/kernel/sys_ft_fork.c $(KERNEL_PATH)/kernel/sys_ft_kill.c $(KERNEL_PATH)/kernel/sys_ft_mmap.c $(KERNEL_PATH)/kernel/sys_ft_wait.c
 	sed -i '/get_pid_info/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
+	sed -i '/ft_fork/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
+	sed -i '/ft_kill/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
+	sed -i '/ft_mmap/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
+	sed -i '/ft_wait/d' $(KERNEL_PATH)/arch/x86/entry/syscalls/syscall_64.tbl
 	sed -i '/sys_get_pid_info.o/d' $(KERNEL_PATH)/kernel/Makefile
+	sed -i '/sys_ft_fork.o/d' $(KERNEL_PATH)/kernel/Makefile
+	sed -i '/sys_ft_kill.o/d' $(KERNEL_PATH)/kernel/Makefile
+	sed -i '/sys_ft_mmap.o/d' $(KERNEL_PATH)/kernel/Makefile
+	sed -i '/sys_ft_wait.o/d' $(KERNEL_PATH)/kernel/Makefile
 	@echo "Cleanup complete."
 
-.PHONY: all add_syscall build_kernel test clean
+.PHONY: all add_syscall build_kernel clean

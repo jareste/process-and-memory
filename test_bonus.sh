@@ -1,3 +1,5 @@
+mkdir -p testout
+
 cc test/test_fork.c -o testout/test_fork
 cc test/test_kill.c -o testout/test_kill
 cc test/test_mmap.c -o testout/test_mmap
