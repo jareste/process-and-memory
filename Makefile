@@ -1,5 +1,5 @@
-# Detect the current kernel source directory
-KERNEL_PATH ?= /lib/modules/$(shell uname -r)/build
+# KERNEL_PATH ?= /lib/modules/$(shell uname -r)/build
+KERNEL_PATH := /home/jareste/ft_linux/linux-6.12.6
 SRC := srcs/syscall.c
 SRC_FORK := srcs/ft_fork.c
 SRC_KILL := srcs/ft_kill.c

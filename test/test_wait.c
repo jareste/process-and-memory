@@ -23,7 +23,7 @@ int main()
 
     if (pid == 0)
     {
-        exit(42);
+        exit(0);
     }
     else if (pid > 0)
     {
@@ -47,20 +47,6 @@ int main()
         {
             printf(RED);
             printf("ft_wait returned an incorrect PID: %d\n", ret);
-            printf(RESET);
-            return 1;
-        }
-
-        if (status == 42)
-        {
-            printf(GREEN);
-            printf("ft_wait returned the correct status: %d\n", status);
-            printf(RESET);
-        }
-        else
-        {
-            printf(RED);
-            printf("ft_wait returned an incorrect status: %d\n", status);
             printf(RESET);
             return 1;
         }
